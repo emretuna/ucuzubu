@@ -18,7 +18,7 @@ RUN uv sync --frozen --no-dev
 # whether the platform's egress IP passes the four anti-bots).
 COPY scripts ./scripts
 
-# SQLite lives on the Railway volume mounted at /data (set UCUZU_DB_PATH accordingly)
+# SQLite path: attach a Railway Volume at /data (dashboard → Service → Volumes).
 ENV UCUZU_DB_PATH=/data/ucuzu.db
-VOLUME /data
+RUN mkdir -p /data
 CMD ["uv", "run", "--no-sync", "python", "-m", "ucuzu"]
