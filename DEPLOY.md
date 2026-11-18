@@ -7,31 +7,47 @@ replica with a persistent volume for SQLite.
 
 - Railway account (railway.com) — Hobby plan (~$5/mo) is enough; trial credit works too.
 - A Telegram bot token from @BotFather (`TELEGRAM_BOT_TOKEN`).
-- This repo pushed to GitHub (Railway deploys from a Git repo), or use the CLI below.
+- Railway CLI (`brew install railway`) — **the deploy path since the IaC migration** (see below).
 
-## Deploy (dashboard)
+## First-time setup (dashboard)
 
-1. **New Project → Deploy from GitHub repo** → select `ucuzu`.
-   Railway reads `railway.toml`: Dockerfile build, start command, restart ALWAYS, 1 replica.
+1. **New Project → Deploy from GitHub repo** → select `ucuzubu` (initial deploy only).
 2. **Service → Variables** → add:
    - `TELEGRAM_BOT_TOKEN` = your token
    - `UCUZU_DB_PATH` = `/data/ucuzu.db`
    - optional affiliate vars (see `.env.example`): `AFFILIATE_HEPSIBURADA`,
      `AFFILIATE_TRENDYOL`, `AFFILIATE_N11`, `AFFILIATE_AMAZON_TAG`
+   - `FETCH_PROXY_URL` when a residential proxy is available (see contingency).
 3. **Service → Volumes** → add a volume mounted at `/data` (1 GB is plenty).
    Without it the cache is lost on every redeploy.
-4. Deploy. Logs should show `ucuzu bot polling started`.
-5. Send the bot a product link from Telegram to verify.
+4. Logs should show `ucuzu bot polling started`. Send the bot a product link to verify.
 
-## Deploy (CLI alternative)
+## Shipping code changes (VERIFIED workflow)
+
+**`git push` does NOT auto-deploy anymore.** After the migration to Infrastructure
+as Code (`.railway/railway.ts`, which replaced the deprecated `railway.toml`), the
+GitHub push trigger was detached — measured: a pushed commit produced no new
+deployment after 100 s. The deploy path is:
+
+```bash
+railway up -d -y        # uploads the working tree, builds the Dockerfile, deploys
+railway deployment list # confirm a new SUCCESS deployment
+```
+
+- `railway config apply` manages service settings (builder, start command,
+  replicas) from `.railway/railway.ts`; it does not diff the pinned `commitSha`,
+  so do not rely on it to ship code.
+- Keep pushing to GitHub for history; deploy with `railway up`.
+- SSH host key: if `railway ssh` fails with "Host key verification failed", run
+  `ssh-keyscan -t ed25519,rsa ssh.railway.com >> ~/.ssh/known_hosts` once.
+
+## CLI prerequisites (one-time)
 
 ```bash
 brew install railway        # or: npm i -g @railway/cli
-railway login               # opens browser auth
-railway link                # pick the existing project + service
-railway up                  # build & deploy from local dir (dashboard Git deploys also work)
-railway variables set TELEGRAM_BOT_TOKEN=<token> UCUZU_DB_PATH=/data/ucuzu.db
-# add the volume in the dashboard (Service → Volumes → /data), then redeploy
+railway login               # browser auth
+railway link                # pick project marvelous-eagerness / service ucuzubu
+railway ssh keys add -k ~/.ssh/id_ed25519.pub   # for railway ssh
 ```
 
 ## Operational notes
