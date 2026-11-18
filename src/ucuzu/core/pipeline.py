@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 
 from ucuzu.core import links, match
@@ -12,6 +13,8 @@ from ucuzu.core.cache import Cache
 from ucuzu.core.fetch import BlockedError, FetchError
 from ucuzu.core.models import ComparisonOutcome, ComparisonResult, Offer
 from ucuzu.sites.base import ADAPTERS, ParseError
+
+logger = logging.getLogger(__name__)
 
 
 _SITE_ERRORS = (ParseError, BlockedError, FetchError, ValueError, KeyError, TypeError)
@@ -103,7 +106,8 @@ async def compare(source_url: str, cache: Cache | None = None) -> ComparisonOutc
             offers = await _cached_search(cache, ad, query)
             site_status[ad.site] = "ok"
             return offers
-        except _SITE_ERRORS:
+        except _SITE_ERRORS as exc:
+            logger.warning("%s search failed: %s", ad.site, exc, exc_info=True)
             site_status[ad.site] = "error"
             return []
 
@@ -127,8 +131,8 @@ async def compare(source_url: str, cache: Cache | None = None) -> ComparisonOutc
                 have = {o.product_id for o in ty_offers}
                 ty_offers = ty_offers + [o for o in extra if o.product_id not in have]
                 results[ty_idx] = ty_offers
-            except _SITE_ERRORS:
-                pass
+            except _SITE_ERRORS as exc:
+                logger.warning("trendyol model-query search failed: %s", exc)
         probe = getattr(ty_ad, "probe_barcodes", None)
         plausible = sorted(
             (o for o in ty_offers if match.similarity(origin.title, o.title) >= 0.3),
@@ -140,8 +144,8 @@ async def compare(source_url: str, cache: Cache | None = None) -> ComparisonOutc
                 probed = {o.product_id: o for o in await probe(plausible)}
                 ty_offers = [probed.get(o.product_id, o) for o in ty_offers]
                 results[ty_idx] = ty_offers
-            except _SITE_ERRORS:
-                pass
+            except _SITE_ERRORS as exc:
+                logger.warning("trendyol barcode probe failed: %s", exc)
         # HB search offers carry no barcode; enrich top title-exact HB
         # candidates via PDP so they can corroborate TY barcode adoption.
         hb_ad = ADAPTERS.get("hepsiburada")
@@ -166,7 +170,8 @@ async def compare(source_url: str, cache: Cache | None = None) -> ComparisonOutc
                     return o
                 try:
                     pdp = await _cached_product(cache, hb_ad, ref)
-                except _SITE_ERRORS:
+                except _SITE_ERRORS as exc:
+                    logger.warning("hepsiburada PDP enrichment failed for %s: %s", o.product_id, exc)
                     return o
                 return replace(o, barcode=pdp.barcode) if pdp.barcode else o
 
@@ -223,7 +228,8 @@ async def compare(source_url: str, cache: Cache | None = None) -> ComparisonOutc
             return cand
         try:
             verified = await _cached_product(cache, ad, ref)
-        except _SITE_ERRORS:
+        except _SITE_ERRORS as exc:
+            logger.warning("%s re-verify failed for %s: %s", cand.site, cand.product_id, exc)
             return cand  # keep search price
         # Preserve search identity when PDP id shape differs (sku vs productId).
         return Offer(

@@ -26,10 +26,10 @@ replica with a persistent volume for SQLite.
 ## Deploy (CLI alternative)
 
 ```bash
-npm i -g @railway/cli
-railway login
-railway init          # link/create project
-railway up            # build & deploy from local dir
+brew install railway        # or: npm i -g @railway/cli
+railway login               # opens browser auth
+railway link                # pick the existing project + service
+railway up                  # build & deploy from local dir (dashboard Git deploys also work)
 railway variables set TELEGRAM_BOT_TOKEN=<token> UCUZU_DB_PATH=/data/ucuzu.db
 # add the volume in the dashboard (Service → Volumes → /data), then redeploy
 ```
@@ -43,12 +43,14 @@ railway variables set TELEGRAM_BOT_TOKEN=<token> UCUZU_DB_PATH=/data/ucuzu.db
   logged per site; a blocked site shows as `— (şu an ulaşılamıyor)` in replies.
 - Local check before deploying: `docker build -t ucuzu . && docker run --rm -e TELEGRAM_BOT_TOKEN=<token> ucuzu`.
 - **Post-deploy anti-bot check (do this first):** the load-bearing unknown is
-  whether Railway's egress IP passes the four sites. The smoke gate ships in
-  the image — run it inside the deployed machine:
+  whether Railway's egress IP passes the four sites. Diagnostics ship in the
+  image — run them inside the deployed machine (requires `brew install railway`,
+  `railway login`, `railway link` first):
 
   ```bash
   railway ssh
-  uv run --no-sync python scripts/smoke_test.py --no-cache
+  uv run --no-sync python scripts/diagnose_sites.py   # raw per-site cause: 403 vs page variant
+  uv run --no-sync python scripts/smoke_test.py --no-cache   # full acceptance gate
   ```
 
   All identity checks PASS → egress is fine. Persistent `BlockedError` /
@@ -56,14 +58,23 @@ railway variables set TELEGRAM_BOT_TOKEN=<token> UCUZU_DB_PATH=/data/ucuzu.db
 
 ## Anti-bot contingency (important)
 
-Railway egress IPs are **datacenter** IPs. The scrapers were verified from a
-Turkish residential IP; Akamai/Amazon may 403 datacenter ranges. The fetch layer
-already rotates TLS impersonation profiles (chrome → chrome124 → safari). If a
-site stays blocked in production:
+Railway egress IPs are **datacenter** IPs. Observed in production: Hepsiburada
+(TLS-fingerprint-based Akamai) passes, but Trendyol/n11/Amazon block the
+datacenter range via IP reputation. The fetch layer rotates TLS impersonation
+profiles (chrome → chrome124 → safari) — that does not fix IP reputation.
 
-1. Run the in-machine smoke gate above; check logs for `BlockedError … (all impersonates)`.
-2. A platform-side 403 is the contingency trigger, not a bug: first countermeasure
-   is a residential proxy (`FETCH_PROXY_URL` support is the plan's documented next
-   step — curl_cffi `proxies=`; ask for it when needed). No headless-browser
-   rewrite without sign-off.
-3. A blocked site degrades gracefully: the other three still compare.
+**Countermeasure (built): residential proxy via `FETCH_PROXY_URL`.**
+
+1. Confirm with the in-machine smoke gate above; logs show
+   `BlockedError … (all impersonates)` for the blocked sites.
+2. Get a **Turkish residential** proxy (datacenter exits stay blocked).
+   Providers with TR residential pools: Bright Data, Oxylabs, Smartproxy,
+   IPRoyal, Proxy-Cheap — pick pay-as-you-go; the bot uses ~30 requests per
+   comparison, so traffic is minimal (a few GB/month at most).
+3. Railway → Variables → add
+   `FETCH_PROXY_URL=http://user:pass@tr.proxy-host:port` → redeploy.
+   All fetches (searches, PDPs, shortener resolution) route through it.
+4. Re-run the in-machine smoke gate; all four sites should report `ok`.
+5. Without a proxy the bot still works partially: unblocked sites compare,
+   blocked ones show `— (şu an ulaşılamıyor)`. No headless-browser rewrite
+   without sign-off.

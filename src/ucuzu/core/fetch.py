@@ -12,6 +12,8 @@ from urllib.parse import urlsplit
 
 from curl_cffi import requests as curl_requests
 
+from ucuzu.core.config import settings
+
 from ucuzu.core.models import FetchResult
 
 
@@ -39,10 +41,21 @@ _last_request: dict[str, float] = {}
 _MIN_INTERVAL = 1.0
 
 
+def _proxies() -> dict[str, str] | None:
+    """Residential/datacenter proxy for anti-bot IP reputation (plan contingency).
+
+    FETCH_PROXY_URL e.g. http://user:pass@tr.proxy.example:8080 — Turkish
+    residential exit strongly preferred; datacenter exits stay blocked."""
+    url = settings.fetch_proxy_url.strip()
+    if not url:
+        return None
+    return {"http": url, "https": url}
+
+
 def _get_session(impersonate: str) -> curl_requests.AsyncSession:
     session = _sessions.get(impersonate)
     if session is None:
-        session = curl_requests.AsyncSession(impersonate=impersonate)
+        session = curl_requests.AsyncSession(impersonate=impersonate, proxies=_proxies())
         _sessions[impersonate] = session
     return session
 
