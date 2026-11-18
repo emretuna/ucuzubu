@@ -34,6 +34,29 @@ def test_schemeless_proxy_gets_http_prefix(monkeypatch):
         "https": "http://u:p@tr.proxy.example:8080",
     }
 
+
+def test_panel_format_user_pass_host_port(monkeypatch):
+    monkeypatch.setattr(fetch.settings, "fetch_proxy_url", "user_1320:secretpass:131.222.224.26:10524")
+    assert fetch._proxies() == {
+        "http": "http://user_1320:secretpass@131.222.224.26:10524",
+        "https": "http://user_1320:secretpass@131.222.224.26:10524",
+    }
+
+
+def test_panel_format_percent_encodes_credentials(monkeypatch):
+    monkeypatch.setattr(fetch.settings, "fetch_proxy_url", "user:pa:ss:proxy.example:8080")
+    # 5 parts → invalid; passwords containing ':' need the URL format instead
+    with pytest.raises(ValueError):
+        fetch._proxies()
+    monkeypatch.setattr(fetch.settings, "fetch_proxy_url", "user:p#ss?word:proxy.example:8080")
+    assert fetch._proxies()["http"] == "http://user:p%23ss%3Fword@proxy.example:8080"
+
+
+def test_malformed_proxy_raises(monkeypatch):
+    monkeypatch.setattr(fetch.settings, "fetch_proxy_url", "just-a-host")
+    with pytest.raises(ValueError):
+        fetch._proxies()
+
 def test_whitespace_proxy_is_unset(monkeypatch):
     monkeypatch.setattr(fetch.settings, "fetch_proxy_url", "   ")
     assert fetch._proxies() is None

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from curl_cffi import requests as curl_requests
 
@@ -44,13 +44,26 @@ _MIN_INTERVAL = 1.0
 def _proxies() -> dict[str, str] | None:
     """Residential/datacenter proxy for anti-bot IP reputation (plan contingency).
 
-    FETCH_PROXY_URL e.g. http://user:pass@tr.proxy.example:8080 — Turkish
-    residential exit strongly preferred; datacenter exits stay blocked."""
-    url = settings.fetch_proxy_url.strip()
-    if not url:
+    Accepted FETCH_PROXY_URL formats:
+      http://user:pass@host:port   (canonical URL)
+      user:pass@host:port          (scheme-less URL)
+      user:pass:host:port          (provider panel format)
+    Turkish residential exit strongly preferred; datacenter exits stay blocked."""
+    raw = settings.fetch_proxy_url.strip()
+    if not raw:
         return None
-    if "://" not in url:
-        url = "http://" + url  # providers often hand out user:pass@host:port
+    if "://" in raw:
+        url = raw
+    elif "@" in raw:
+        url = "http://" + raw
+    else:
+        parts = raw.split(":")
+        if len(parts) != 4 or not all(parts):
+            raise ValueError(
+                "FETCH_PROXY_URL must be user:pass:host:port or [http://]user:pass@host:port"
+            )
+        user, password, host, port = parts
+        url = f"http://{quote(user, safe='')}:{quote(password, safe='')}@{host}:{port}"
     return {"http": url, "https": url}
 
 
