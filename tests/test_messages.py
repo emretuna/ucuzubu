@@ -230,7 +230,7 @@ def test_error_constants_are_turkish():
 
 def test_help_text_is_fancy_html_guide():
     text = messages.HELP_TEXT
-    assert "<b>ucuzu'ya hoş geldin!</b>" in text
+    assert "<b>UcuzuBu'ya hoş geldin!</b>" in text
     for marker in ("Nasıl çalışır?", "Nasıl kullanılır?", "Sonuçta ne var?", "Paylaş ➜ Telegram"):
         assert marker in text
     for site in ("Hepsiburada", "Trendyol", "n11", "Amazon.com.tr"):

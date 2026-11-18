@@ -36,7 +36,7 @@ NO_URL_HINT = (
     "🛒 Desteklenen siteler: <b>Hepsiburada, Trendyol, n11, Amazon.com.tr</b>"
 )
 HELP_TEXT = (
-    "👋 <b>ucuzu'ya hoş geldin!</b>\n"
+    "👋 <b>UcuzuBu'ya hoş geldin!</b>\n"
     "<i>Aynı ürün, dört site, tek en ucuz fiyat.</i> 🏷️\n\n"
     "🛒 <b>Nasıl çalışır?</b>\n"
     "Bir ürün linki paylaş → Hepsiburada, Trendyol, n11 ve Amazon.com.tr'de "
