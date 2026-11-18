@@ -5,7 +5,7 @@ import { defineRailway, github, project, service } from "railway/iac";
 export const partial = "ucuzubu";
 export default defineRailway(() => {
   const ucuzubu = service("ucuzubu", {
-    source: github("emretuna/ucuzubu", { branch: "main", commitSha: "dd17f9f6a4895337931128e649840e1b5e55e36b", upstreamUrl: "https://github.com/emretuna/ucuzubu" }),
+    source: github("emretuna/ucuzubu", { branch: "main", commitSha: "1802bf9661f2c3aa63ec7446c7492e624e2a2bc4", upstreamUrl: "https://github.com/emretuna/ucuzubu" }),
     build: { buildEnvironment: "V3", builder: "DOCKERFILE", dockerfilePath: "Dockerfile" },
     start: "uv run --no-sync python -m ucuzu",
     replicas: { "iad": 1 },
