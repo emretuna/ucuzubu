@@ -46,6 +46,12 @@ def test_amazon_tag_whitespace_only_leaves_url_unchanged(settings, monkeypatch):
     assert affiliate_url("amazon", AMZ_URL) == AMZ_URL
 
 
+def test_amazon_placeholder_tag_not_appended(settings, monkeypatch):
+    # A placeholder like "affid" is not a valid Associates store tag; appending
+    # it would ship broken affiliate links.
+    monkeypatch.setattr(settings, "affiliate_amazon_tag", "affid")
+    assert affiliate_url("amazon", AMZ_URL) == AMZ_URL
+
 @pytest.mark.parametrize(
     ("site", "attr"),
     [
