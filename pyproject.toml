@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ucuzu"
+version = "0.1.0"
+description = "Telegram cheapest-price bot for Turkish marketplaces (Hepsiburada, Trendyol, n11, Amazon.com.tr)"
+requires-python = ">=3.12"
+dependencies = [
+    "aiogram>=3.13,<4",
+    "curl_cffi>=0.13",
+    "pydantic-settings>=2",
+    "aiosqlite>=0.20",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ucuzu"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
