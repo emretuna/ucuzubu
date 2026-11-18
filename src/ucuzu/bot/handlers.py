@@ -48,7 +48,7 @@ def create_router(cache: Cache) -> Router:
 
     @router.message(Command("start", "help"))
     async def on_help(message: Message) -> None:
-        await message.answer(messages.HELP_TEXT, disable_web_page_preview=True)
+        await message.answer(messages.HELP_TEXT, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
     @router.message(F.text)
     async def on_text(message: Message) -> None:
@@ -56,7 +56,7 @@ def create_router(cache: Cache) -> Router:
         try:
             url = links.extract_url(text)
         except links.UnsupportedLinkError:
-            await message.answer(messages.NO_URL_HINT, disable_web_page_preview=True)
+            await message.answer(messages.NO_URL_HINT, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
             return
 
         user_id = message.from_user.id if message.from_user else 0

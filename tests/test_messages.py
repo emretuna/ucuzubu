@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import re
 from urllib.parse import quote
 
 import pytest
@@ -225,3 +226,25 @@ def test_error_constants_are_turkish():
     assert messages.ACK_TEXT == "🔍 Ürün aranıyor… (4 site)"
     assert "Hepsiburada" in messages.HELP_TEXT
     assert "Hepsiburada" in messages.NO_URL_HINT
+
+
+def test_help_text_is_fancy_html_guide():
+    text = messages.HELP_TEXT
+    assert "<b>ucuzu'ya hoş geldin!</b>" in text
+    for marker in ("Nasıl çalışır?", "Nasıl kullanılır?", "Sonuçta ne var?", "Paylaş ➜ Telegram"):
+        assert marker in text
+    for site in ("Hepsiburada", "Trendyol", "n11", "Amazon.com.tr"):
+        assert site in text
+    assert "kupon" in text.lower() or "Kupon" in text
+    # balanced, Telegram-allowed tags only
+    stack = []
+    for m in re.finditer(r"<(/?)([a-zA-Z0-9]+)[^>]*>", text):
+        close, tag = m.groups()
+        assert tag in {"b", "i", "u", "s", "pre", "code", "a"}
+        if close:
+            assert stack and stack[-1] == tag
+            stack.pop()
+        else:
+            stack.append(tag)
+    assert not stack
+    assert len(text) <= 4096

@@ -150,3 +150,14 @@ async def test_non_url_text_gets_hint(router):
     msg = FakeMessage("merhaba nasilsin")
     await text_handler(router)(msg)
     assert msg.answers[0]["text"] == messages.NO_URL_HINT
+    assert msg.answers[0]["parse_mode"] == "HTML"
+
+
+async def test_start_sends_html_guide(router):
+    msg = FakeMessage("/start")
+    await router.message.handlers[0].callback(msg)
+    assert len(msg.answers) == 1
+    sent = msg.answers[0]
+    assert sent["text"] == messages.HELP_TEXT
+    assert sent["parse_mode"] == "HTML"
+    assert sent["disable_web_page_preview"] is True
