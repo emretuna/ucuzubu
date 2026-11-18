@@ -49,6 +49,8 @@ def _proxies() -> dict[str, str] | None:
     url = settings.fetch_proxy_url.strip()
     if not url:
         return None
+    if "://" not in url:
+        url = "http://" + url  # providers often hand out user:pass@host:port
     return {"http": url, "https": url}
 
 

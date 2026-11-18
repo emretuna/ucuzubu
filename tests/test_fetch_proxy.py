@@ -27,6 +27,13 @@ def test_proxy_url_applied_to_both_schemes(monkeypatch):
     }
 
 
+def test_schemeless_proxy_gets_http_prefix(monkeypatch):
+    monkeypatch.setattr(fetch.settings, "fetch_proxy_url", "u:p@tr.proxy.example:8080")
+    assert fetch._proxies() == {
+        "http": "http://u:p@tr.proxy.example:8080",
+        "https": "http://u:p@tr.proxy.example:8080",
+    }
+
 def test_whitespace_proxy_is_unset(monkeypatch):
     monkeypatch.setattr(fetch.settings, "fetch_proxy_url", "   ")
     assert fetch._proxies() is None
