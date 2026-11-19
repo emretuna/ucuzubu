@@ -57,6 +57,17 @@ def test_parse_product_url_accepts_bare_host_and_trailing_slash(adapter):
     )
 
 
+def test_parse_product_url_accepts_pd_prefix(adapter):
+    ref = adapter.parse_product_url(
+        "https://www.trendyol.com/pd/shimano/speedmaster-14000-xsc-olta-makinasi-p-196482210"
+    )
+    assert ref is not None
+    assert ref.product_id == "196482210"
+    assert ref.url == (
+        "https://www.trendyol.com/shimano/speedmaster-14000-xsc-olta-makinasi-p-196482210"
+    )
+
+
 @pytest.mark.parametrize(
     "url",
     [

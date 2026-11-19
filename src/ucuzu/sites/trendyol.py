@@ -26,7 +26,7 @@ BASE_URL = "https://www.trendyol.com"
 SEARCH_URL = "https://www.trendyol.com/sr?q={query}"
 
 # /<brand>/<slug>-p-<digits> — the brand segment is required (URL without it 404s).
-_PRODUCT_PATH_RE = re.compile(r"^/(?P<brand>[^/]+)/(?P<slug>[^/]+?)-p-(?P<id>\d+)/?$")
+_PRODUCT_PATH_RE = re.compile(r"^/(?:pd/)?(?P<brand>[^/]+)/(?P<slug>[^/]+?)-p-(?P<id>\d+)/?$")
 
 _PDP_ANCHOR_RE = re.compile(r'<script[^>]*>\s*window\["__envoy__SHARED_PROPS"\]\s*=\s*')
 _PDP_MOBILE_ANCHOR_RE = re.compile(
