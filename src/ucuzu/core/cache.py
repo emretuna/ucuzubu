@@ -84,6 +84,7 @@ def result_from_dict(data: dict[str, Any]) -> ComparisonResult:
         similar=[offer_from_dict(o) for o in data["similar"]],
         site_status=dict(data["site_status"]),
         cheapest=offer_from_dict(cheapest) if cheapest else None,
+        fallback=[offer_from_dict(o) for o in data.get("fallback", [])],
     )
 
 

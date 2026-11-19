@@ -17,6 +17,7 @@ replica with a persistent volume for SQLite.
    - `UCUZU_DB_PATH` = `/data/ucuzu.db`
    - optional affiliate vars (see `.env.example`): `AFFILIATE_HEPSIBURADA`,
      `AFFILIATE_TRENDYOL`, `AFFILIATE_N11`, `AFFILIATE_AMAZON_TAG`
+   - optional `EXA_API_KEY` (exa.ai): enables the no-result web fallback
    - `FETCH_PROXY_URL` when a residential proxy is available (see contingency).
 3. **Service → Volumes** → add a volume mounted at `/data` (1 GB is plenty).
    Without it the cache is lost on every redeploy.

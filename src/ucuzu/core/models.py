@@ -37,6 +37,7 @@ class ComparisonResult:
     similar: list[Offer]  # capped at 3 cheapest
     site_status: dict[str, str]  # site -> "ok" | "error"
     cheapest: Offer | None = None
+    fallback: list[Offer] = field(default_factory=list)  # Exa web fallback, unverified
 
     @property
     def savings(self) -> float:

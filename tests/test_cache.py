@@ -40,7 +40,7 @@ def make_offer(**overrides) -> Offer:
     return Offer(**data)
 
 
-def make_result(cheapest: Offer | None) -> ComparisonResult:
+def make_result(cheapest: Offer | None, fallback: list[Offer] | None = None) -> ComparisonResult:
     origin = make_offer()
     ty = make_offer(
         site="trendyol",
@@ -59,6 +59,7 @@ def make_result(cheapest: Offer | None) -> ComparisonResult:
         similar=[make_offer(site="n11", price=34605.12, coupon_price=True)],
         site_status={"hepsiburada": "ok", "trendyol": "ok", "n11": "ok", "amazon": "error"},
         cheapest=cheapest,
+        fallback=list(fallback or []),
     )
 
 
@@ -203,6 +204,33 @@ def test_result_dict_helpers_are_json_serializable():
     result = make_result(None)
     payload = json.dumps(result_to_dict(result), ensure_ascii=False)
     assert result_from_dict(json.loads(payload)) == result
+
+
+async def test_comparison_roundtrip_with_fallback(cache):
+    instance, _clock = cache
+    fb = make_offer(
+        site="trendyol",
+        price=0.0,
+        list_price=None,
+        url="https://www.trendyol.com/shimano/power-aero-14000-xsc-pg-p-753753295",
+        product_id="753753295",
+        merchant=None,
+    )
+    result = make_result(None, fallback=[fb])
+    url = "https://www.hepsiburada.com/x-p-HBCV00008XOKU2"
+    await instance.set_comparison(url, result)
+
+    hit = await instance.get_comparison(url)
+    assert hit is not None
+    cached, _created_at = hit
+    assert cached.fallback == [fb]
+    assert cached.cheapest is None
+
+
+def test_result_from_dict_without_fallback_key():
+    data = result_to_dict(make_result(None))
+    data.pop("fallback")  # rows cached before the fallback column existed
+    assert result_from_dict(data).fallback == []
 
 
 async def test_set_product_key_override(cache):

@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     affiliate_amazon_tag: str = ""
     ucuzu_db_path: str = "ucuzu.db"
     fetch_proxy_url: str = ""
+    exa_api_key: str = ""
 
 
 settings = Settings()

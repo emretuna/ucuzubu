@@ -5,14 +5,16 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-
-from ucuzu.core import links, match
+from collections.abc import Awaitable, Callable
 from dataclasses import replace
+from urllib.parse import urlsplit
 
+from ucuzu.core import exa, links, match
 from ucuzu.core.cache import Cache
+from ucuzu.core.config import settings
 from ucuzu.core.fetch import BlockedError, FetchError
 from ucuzu.core.models import ComparisonOutcome, ComparisonResult, Offer
-from ucuzu.sites.base import ADAPTERS, ParseError
+from ucuzu.sites.base import ADAPTERS, ParseError, site_for_host
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +73,102 @@ async def _cached_search(cache: Cache | None, adapter, query: str) -> list[Offer
     return offers
 
 
-async def compare(source_url: str, cache: Cache | None = None) -> ComparisonOutcome:
+async def _reverify(cand: Offer, cache: Cache | None) -> Offer:
+    if cand.site not in ("hepsiburada", "trendyol"):
+        return cand
+    ad = ADAPTERS[cand.site]
+    ref = ad.parse_product_url(cand.url)
+    if ref is None:
+        return cand
+    try:
+        verified = await _cached_product(cache, ad, ref)
+    except _SITE_ERRORS as exc:
+        logger.warning("%s re-verify failed for %s: %s", cand.site, cand.product_id, exc)
+        return cand  # keep search price
+    # Preserve search identity when PDP id shape differs (sku vs productId).
+    return Offer(
+        site=cand.site,
+        title=verified.title,
+        price=verified.price,
+        list_price=verified.list_price,
+        url=cand.url,
+        product_id=cand.product_id,
+        variant_id=cand.variant_id,
+        merchant=verified.merchant,
+        in_stock=verified.in_stock,
+        coupon_price=verified.coupon_price,
+        barcode=verified.barcode or cand.barcode,
+        brand=verified.brand or cand.brand,
+    )
+
+
+def _link_only(cand: exa.ExaCandidate, site: str, product_id: str) -> Offer:
+    """Unverified alternative: the URL is real, the price is best-effort (0.0 = unknown)."""
+    return Offer(
+        site=site,
+        title=cand.title or "Ürün sayfası",
+        price=cand.price or 0.0,
+        list_price=None,
+        url=cand.url,
+        product_id=product_id,
+        variant_id=None,
+        merchant=None,
+        in_stock=True,
+        coupon_price=False,
+        barcode=None,
+        brand=None,
+    )
+
+
+async def _exa_fallback(origin: Offer, cache: Cache | None) -> list[Offer]:
+    """Web-search alternatives, verify each through its site adapter.
+
+    Kept in Exa relevance order (not price-sorted): these are unverified
+    alternatives, and a link-only hit has no comparable price.
+    """
+    cands = await exa.search_alternatives(build_query(origin.title))
+    offers: list[Offer] = []
+    for cand in cands:
+        site = site_for_host(urlsplit(cand.url).netloc)
+        if site is None:
+            continue
+        adapter = ADAPTERS.get(site)
+        if adapter is None:
+            continue
+        ref = adapter.parse_product_url(cand.url)
+        product_id = ref.product_id if ref is not None else cand.url
+        if (site, product_id) == (origin.site, origin.product_id):
+            continue
+        if ref is None:
+            offers.append(_link_only(cand, site, product_id))
+            continue
+        try:
+            pdp = await _cached_product(cache, adapter, ref)
+        except _SITE_ERRORS as exc:
+            logger.warning("exa candidate %s fetch failed: %s", cand.url, exc)
+            offers.append(_link_only(cand, site, product_id))
+            continue
+        verdict = match.classify(origin, pdp)
+        if verdict == "discard":
+            continue
+        if verdict == "exact":
+            try:
+                pdp = await _reverify(pdp, cache)
+            except _SITE_ERRORS as exc:
+                logger.warning("exa candidate %s re-verify failed: %s", cand.url, exc)
+        offers.append(pdp)
+
+    dedup: dict[tuple[str, str], Offer] = {}
+    for offer in offers:
+        dedup.setdefault((offer.site, offer.product_id), offer)
+    return list(dedup.values())[:3]
+
+
+async def compare(
+    source_url: str,
+    cache: Cache | None = None,
+    on_fallback: Callable[[], Awaitable[None]] | None = None,
+) -> ComparisonOutcome:
     # 1. Resolve (link cache when available).
     canonical = None
     if cache is not None:
@@ -219,36 +316,8 @@ async def compare(source_url: str, cache: Cache | None = None) -> ComparisonOutc
                 similar.append(cand)
 
     # 5. Re-verify HB/TY exact matches via PDP (authoritative buybox price).
-    async def reverify(cand: Offer) -> Offer:
-        if cand.site not in ("hepsiburada", "trendyol"):
-            return cand
-        ad = ADAPTERS[cand.site]
-        ref = ad.parse_product_url(cand.url)
-        if ref is None:
-            return cand
-        try:
-            verified = await _cached_product(cache, ad, ref)
-        except _SITE_ERRORS as exc:
-            logger.warning("%s re-verify failed for %s: %s", cand.site, cand.product_id, exc)
-            return cand  # keep search price
-        # Preserve search identity when PDP id shape differs (sku vs productId).
-        return Offer(
-            site=cand.site,
-            title=verified.title,
-            price=verified.price,
-            list_price=verified.list_price,
-            url=cand.url,
-            product_id=cand.product_id,
-            variant_id=cand.variant_id,
-            merchant=verified.merchant,
-            in_stock=verified.in_stock,
-            coupon_price=verified.coupon_price,
-            barcode=verified.barcode or cand.barcode,
-            brand=verified.brand or cand.brand,
-        )
-
     if exact:
-        exact = list(await asyncio.gather(*(reverify(c) for c in exact)))
+        exact = list(await asyncio.gather(*(_reverify(c, cache) for c in exact)))
 
     # Dedupe again after re-verification (same product surfaced twice).
     dedup: dict[tuple[str, str], Offer] = {}
@@ -262,6 +331,12 @@ async def compare(source_url: str, cache: Cache | None = None) -> ComparisonOutc
     cheapest = min(in_stock, key=lambda o: o.price) if in_stock else None
     similar = sorted(similar, key=lambda o: o.price)[:3]
 
+    fallback: list[Offer] = []
+    if not in_stock and not similar and settings.exa_api_key.strip():
+        if on_fallback is not None:
+            await on_fallback()
+        fallback = await _exa_fallback(origin, cache)
+
     result = ComparisonResult(
         origin=origin,
         offers=exact,
@@ -269,6 +344,7 @@ async def compare(source_url: str, cache: Cache | None = None) -> ComparisonOutc
         similar=similar,
         site_status=site_status,
         cheapest=cheapest,
+        fallback=fallback,
     )
     if cache is not None:
         await cache.set_comparison(canonical, result)

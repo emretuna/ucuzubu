@@ -73,8 +73,12 @@ def create_router(cache: Cache) -> Router:
 
         async with lock:
             ack = await message.answer(messages.ACK_TEXT, disable_web_page_preview=True)
+
+            async def notify_fallback() -> None:
+                await _edit(ack, messages.FALLBACK_WAIT_TEXT)
+
             try:
-                outcome = await pipeline.compare(url, cache)
+                outcome = await pipeline.compare(url, cache, on_fallback=notify_fallback)
             except links.UnsupportedLinkError:
                 await _edit(ack, messages.ERR_UNSUPPORTED_LINK)
                 return

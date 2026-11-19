@@ -29,6 +29,11 @@ ERR_PRODUCT_FETCH = (
 ERR_GENERIC = "Bir şeyler ters gitti… biraz sonra tekrar dene."
 RATE_LIMIT_MSG = "Biraz yavaş 🙂 tekrar dene"
 ACK_TEXT = "🔍 Ürün aranıyor… (4 site)"
+FALLBACK_WAIT_TEXT = (
+    "⏳ Standart aramada sonuç çıkmadı. Alternatifleri daha geniş bir web taramasıyla "
+    "arıyorum — bu işlem normalden biraz uzun sürebilir…"
+)
+FALLBACK_HEADER = "🌐 Web taramasıyla bulunan alternatifler (birebir eşleşme doğrulanmadı):"
 NO_URL_HINT = (
     "🔗 Bir ürün linki bulamadım 🙂\n\n"
     "📲 Ürün sayfasında <b>Paylaş ➜ Telegram</b> ➜ bu sohbeti seç,\n"
@@ -135,6 +140,20 @@ def _similar_block(result: ComparisonResult) -> str:
     return "\n".join(lines)
 
 
+def _fallback_block(result: ComparisonResult) -> str:
+    lines = [FALLBACK_HEADER]
+    for offer in result.fallback[:3]:
+        title = escape(_truncate_title(offer.title))
+        price = format_price(offer.price) if offer.price > 0 else "fiyat sayfada"
+        url = affiliate_url(offer.site, offer.url)
+        lines.append(
+            f'• <a href="{escape(url, quote=True)}">{title}</a> — {escape(price)} '
+            f"({escape(_site_name(offer.site))})"
+        )
+    lines.append("Fiyatlar web taramasından alındı, güncel olmayabilir.")
+    return "\n".join(lines)
+
+
 def format_comparison(result: ComparisonResult, *, age_minutes: float | None = None) -> str:
     """Render a comparison as Telegram HTML (parse_mode=HTML)."""
     origin = result.origin
@@ -158,6 +177,9 @@ def format_comparison(result: ComparisonResult, *, age_minutes: float | None = N
     similar = _similar_block(result)
     if similar:
         blocks.append(similar)
+
+    if result.fallback:
+        blocks.append(_fallback_block(result))
 
     footer = "Fiyatlar anlık değişebilir."
     if age_minutes is not None:

@@ -10,6 +10,7 @@ import pytest
 
 from ucuzu.core import pipeline
 from ucuzu.core.cache import Cache
+from ucuzu.core.exa import ExaCandidate
 from ucuzu.core.models import Offer, ProductRef
 from ucuzu.sites.base import ParseError
 
@@ -308,3 +309,109 @@ async def test_hb_enrichment_skips_model_mismatch(adapters):
     assert "HBCVWRONG0001" not in adapters["hepsiburada"].product_calls
     assert r.origin.barcode is None  # no corroborating anchor → no adoption
     assert not any(o.site == "trendyol" for o in r.exact)
+
+
+def exa_spy(monkeypatch, *, key="test-exa-key", cands=()):
+    """Replace pipeline's Exa call; return recorded queries."""
+    calls = []
+
+    async def fake_search(query):
+        calls.append(query)
+        return list(cands)
+
+    monkeypatch.setattr(pipeline.exa, "search_alternatives", fake_search)
+    monkeypatch.setattr(pipeline.settings, "exa_api_key", key)
+    return calls
+
+
+async def test_exa_fallback_verifies_candidate_pdp(adapters, monkeypatch):
+    adapters["hepsiburada"].search_offers = []
+    n11_pdp = offer(
+        "n11", HB_TITLE, 31000.0, "999", url="https://www.n11.com/urun/shimano-power-aero-14000-999"
+    )
+    adapters["n11"].products["999"] = n11_pdp
+    calls = exa_spy(
+        monkeypatch, cands=[ExaCandidate(url=n11_pdp.url, title=HB_TITLE, price=30500.0)]
+    )
+    notices = []
+
+    async def on_fallback():
+        notices.append(True)
+
+    outcome = await pipeline.compare(HB_URL, on_fallback=on_fallback)
+    r = outcome.result
+
+    # PDP price wins over the highlight price; no cheapest on a fallback-only result.
+    assert [(o.site, o.product_id, o.price) for o in r.fallback] == [("n11", "999", 31000.0)]
+    assert r.exact == [] and r.similar == []
+    assert r.cheapest is None
+    assert notices == [True]
+    assert calls == [pipeline.build_query(HB_TITLE)]
+
+
+async def test_exa_fallback_skipped_when_exact_found(adapters, monkeypatch):
+    calls = exa_spy(monkeypatch)
+
+    outcome = await pipeline.compare(HB_URL)
+
+    assert outcome.result.cheapest is not None
+    assert outcome.result.fallback == []
+    assert calls == []
+
+
+async def test_exa_fallback_skipped_when_similar_found(adapters, monkeypatch):
+    adapters["hepsiburada"].search_offers = [
+        offer("hepsiburada", "SHIMANO Power Aero 14000 Xsc Pg Surf Makine", 35000.0, "HBCVSIMILAR")
+    ]
+    calls = exa_spy(monkeypatch)
+
+    outcome = await pipeline.compare(HB_URL)
+
+    r = outcome.result
+    assert [o.product_id for o in r.similar] == ["HBCVSIMILAR"]
+    assert r.fallback == []
+    assert calls == []
+
+
+async def test_exa_fallback_disabled_without_key(adapters, monkeypatch):
+    adapters["hepsiburada"].search_offers = []
+    calls = exa_spy(monkeypatch, key="")
+
+    outcome = await pipeline.compare(HB_URL)
+
+    assert outcome.result.fallback == []
+    assert calls == []
+
+
+async def test_exa_fallback_discards_different_model(adapters, monkeypatch):
+    adapters["hepsiburada"].search_offers = []
+    other = offer(
+        "n11",
+        "Daiwa Saltiga 20000 Olta Makine",
+        9000.0,
+        "777",
+        url="https://www.n11.com/urun/daiwa-saltiga-20000-777",
+    )
+    adapters["n11"].products["777"] = other
+    exa_spy(monkeypatch, cands=[ExaCandidate(url=other.url, title=other.title, price=9000.0)])
+
+    outcome = await pipeline.compare(HB_URL)
+
+    assert outcome.result.fallback == []
+
+
+async def test_exa_fallback_keeps_link_only_for_unparsed_url(adapters, monkeypatch):
+    adapters["hepsiburada"].search_offers = []
+    exa_spy(
+        monkeypatch,
+        cands=[ExaCandidate(url="https://www.n11.com/arama", title="", price=1000.0)],
+    )
+
+    outcome = await pipeline.compare(HB_URL)
+
+    [fb] = outcome.result.fallback
+    assert fb.site == "n11"
+    assert fb.title == "Ürün sayfası"
+    assert fb.price == 1000.0
+    assert fb.product_id == "https://www.n11.com/arama"
+    assert fb.in_stock is True

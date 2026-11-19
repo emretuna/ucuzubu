@@ -13,6 +13,7 @@ from ucuzu.bot import messages
 from ucuzu.bot.handlers import create_router
 from ucuzu.core import links, pipeline
 from ucuzu.core.cache import Cache
+from ucuzu.core.config import settings
 from ucuzu.core.fetch import BlockedError
 from ucuzu.core.models import ComparisonOutcome, ComparisonResult, Offer
 
@@ -82,7 +83,7 @@ def router(tmp_path):
 
 
 async def test_link_flow_ack_edits_into_comparison(router, monkeypatch):
-    async def fake_compare(url, cache=None):
+    async def fake_compare(url, cache=None, on_fallback=None):
         assert url == HB_URL
         return ComparisonOutcome(result=result())
 
@@ -101,7 +102,7 @@ async def test_link_flow_ack_edits_into_comparison(router, monkeypatch):
 async def test_cache_hit_adds_age_footer(router, monkeypatch):
     created = time.time() - 12 * 60
 
-    async def fake_compare(url, cache=None):
+    async def fake_compare(url, cache=None, on_fallback=None):
         return ComparisonOutcome(result=result(), cache_hit=True, created_at=created)
 
     monkeypatch.setattr(pipeline, "compare", fake_compare)
@@ -113,7 +114,7 @@ async def test_cache_hit_adds_age_footer(router, monkeypatch):
 async def test_cooldown_blocks_second_compare(router, monkeypatch):
     calls = []
 
-    async def fake_compare(url, cache=None):
+    async def fake_compare(url, cache=None, on_fallback=None):
         calls.append(url)
         return ComparisonOutcome(result=result())
 
@@ -127,7 +128,7 @@ async def test_cooldown_blocks_second_compare(router, monkeypatch):
 
 
 async def test_unsupported_link_edits_error(router, monkeypatch):
-    async def fake_compare(url, cache=None):
+    async def fake_compare(url, cache=None, on_fallback=None):
         raise links.UnsupportedLinkError("no adapter")
 
     monkeypatch.setattr(pipeline, "compare", fake_compare)
@@ -137,7 +138,7 @@ async def test_unsupported_link_edits_error(router, monkeypatch):
 
 
 async def test_blocked_site_edits_fetch_error(router, monkeypatch):
-    async def fake_compare(url, cache=None):
+    async def fake_compare(url, cache=None, on_fallback=None):
         raise BlockedError("403")
 
     monkeypatch.setattr(pipeline, "compare", fake_compare)
@@ -161,3 +162,46 @@ async def test_start_sends_html_guide(router):
     assert sent["text"] == messages.HELP_TEXT
     assert sent["parse_mode"] == "HTML"
     assert sent["disable_web_page_preview"] is True
+
+
+TY_FALLBACK_URL = "https://www.trendyol.com/shimano/power-aero-14000-xsc-pg-p-753753295"
+
+
+def fallback_result():
+    origin = result().origin
+    fb = Offer(
+        site="trendyol", title="Shimano Power Aero 14000 XSC PG <&> Surf Makine", price=0.0,
+        list_price=None, url=TY_FALLBACK_URL, product_id=TY_FALLBACK_URL, variant_id=None,
+        merchant=None, in_stock=True, coupon_price=False, barcode=None, brand=None,
+    )
+    return ComparisonResult(
+        origin=origin, offers=[], exact=[], similar=[],
+        site_status={"hepsiburada": "ok", "trendyol": "ok", "n11": "ok", "amazon": "ok"},
+        cheapest=None, fallback=[fb],
+    )
+
+
+async def test_fallback_flow_notice_then_affiliate_links(router, monkeypatch):
+    monkeypatch.setattr(settings, "affiliate_trendyol", "https://go.example/ty?u={url}")
+    notices = []
+
+    async def fake_compare(url, cache=None, on_fallback=None):
+        assert on_fallback is not None
+        await on_fallback()
+        notices.append(url)
+        return ComparisonOutcome(result=fallback_result())
+
+    monkeypatch.setattr(pipeline, "compare", fake_compare)
+    msg = TrackedMessage(HB_URL)
+    await text_handler(router)(msg)
+
+    assert notices == [HB_URL]
+    assert [a["text"] for a in msg.answers] == [messages.ACK_TEXT]
+    assert [e["text"] for e in msg.edits][0] == messages.FALLBACK_WAIT_TEXT
+    final = msg.edits[-1]
+    assert messages.FALLBACK_HEADER in final["text"]
+    assert "Diğer sitelerde birebir eşleşme bulunamadı" in final["text"]
+    assert "fiyat sayfada" in final["text"]
+    assert '<a href="https://go.example/ty?u=' in final["text"]
+    assert "&lt;&amp;&gt;" in final["text"]
+    assert final["reply_markup"] is None

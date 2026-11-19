@@ -197,6 +197,38 @@ def test_only_origin_exact_counts_as_no_match():
     assert "Diğer sitelerde birebir eşleşme bulunamadı" in messages.format_comparison(result)
 
 
+def test_fallback_block_renders_affiliate_links_and_unknown_price(monkeypatch):
+    monkeypatch.setattr(settings, "affiliate_trendyol", "https://aff.ty.example/go?u={url}")
+    unknown = make_offer(
+        "trendyol",
+        "Shimano Power Aero 14000 XSC PG <&> Surf Makine",
+        0.0,
+        product_id="fb-1",
+        url=TY_URL,
+    )
+    priced = make_offer(
+        "n11",
+        "Shimano Power Aero 14000 XSC PG Surf Makine",
+        2959.95,
+        product_id="fb-2",
+    )
+    result = dataclasses.replace(
+        make_result(exact=[], similar=[], cheapest=None), fallback=[unknown, priced]
+    )
+    text = messages.format_comparison(result)
+
+    assert messages.FALLBACK_HEADER in text
+    assert "Diğer sitelerde birebir eşleşme bulunamadı" in text
+    assert "fiyat sayfada" in text
+    assert "2.959,95 ₺" in text
+    assert "&lt;&amp;&gt;" in text
+    assert "<&>" not in text
+    href = f'<a href="https://aff.ty.example/go?u={quote(TY_URL, safe="")}">'
+    assert href in text
+    assert "Fiyatlar web taramasından alındı, güncel olmayabilir." in text
+    assert messages.cheapest_button(result) is None
+
+
 def test_cheapest_button_uses_affiliate_template(monkeypatch):
     monkeypatch.setattr(settings, "affiliate_n11", "https://aff.n11.example/go?u={url}")
     markup = messages.cheapest_button(make_result())
