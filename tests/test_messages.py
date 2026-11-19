@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+from html import escape
 import re
 from urllib.parse import quote
 
@@ -164,7 +165,7 @@ def test_similar_offers_are_labeled_and_truncated():
     long_similar = dataclasses.replace(SIMILAR, title=long_title)
     text = messages.format_comparison(make_result(similar=[long_similar]))
     assert "Benzer ürün (farklı satıcı/model olabilir)" in text
-    assert "• Benzer: Shimano cok uzun urun adi" in text
+    assert ">Shimano cok uzun urun adi" in text
     assert "…" in text
     assert long_title not in text
     assert "21.000,00 ₺" in text
@@ -174,6 +175,19 @@ def test_similar_capped_at_three():
     extras = [dataclasses.replace(SIMILAR, title=f"Model {i}", price=1000.0 + i) for i in range(5)]
     text = messages.format_comparison(make_result(similar=extras))
     assert text.count("• Benzer:") == 3
+
+
+def test_similar_links_use_affiliate_template(monkeypatch):
+    monkeypatch.setattr(settings, "affiliate_trendyol", "https://aff.ty.example/go?u={url}")
+    text = messages.format_comparison(make_result(similar=[SIMILAR]))
+    expected = "https://aff.ty.example/go?u=" + quote(SIMILAR.url, safe="")
+    assert f'<a href="{escape(expected, quote=True)}">' in text
+
+
+def test_similar_links_clean_without_template(monkeypatch):
+    monkeypatch.setattr(settings, "affiliate_trendyol", "")
+    text = messages.format_comparison(make_result(similar=[SIMILAR]))
+    assert f'<a href="{SIMILAR.url}">' in text
 
 
 def test_same_product_cheapest_message():
