@@ -311,6 +311,57 @@ async def test_hb_enrichment_skips_model_mismatch(adapters):
     assert not any(o.site == "trendyol" for o in r.exact)
 
 
+async def test_hb_enrichment_reaches_genuine_listing_behind_merchant_copies(adapters):
+    # Live data drift: HB search pads the top of the title-exact list with 4
+    # merchant copies carrying junk barcodes; the genuine listing (whose
+    # barcode corroborates TY) ranks 5th. Enrichment must reach it.
+    n11_origin = offer("n11", HB_TITLE, 33163.24, "83521276", url=N11_URL)
+    adapters["n11"].product = n11_origin
+    adapters["n11"].search_offers = [n11_origin]
+
+    junk_pids = ["HBJUNK0000001", "HBJUNK0000002", "HBJUNK0000003", "HBJUNK0000004"]
+    junk_barcodes = [
+        "FRN-TM936640724357234775",
+        "ZURAX-TM936640724357234775",
+        "AYSMZRTM936640724357234775",
+        "ZURZURA-TM936640724357234775",
+    ]
+    genuine = offer("hepsiburada", HB_TITLE, 37685.5, "HBCV00008XOKU2")  # no barcode
+    adapters["hepsiburada"].search_offers = [
+        *(offer("hepsiburada", HB_TITLE, 37685.5, pid) for pid in junk_pids),
+        genuine,
+    ]
+    adapters["hepsiburada"].products = {
+        pid: offer("hepsiburada", HB_TITLE, 37685.5, pid, barcode=barcode)
+        for pid, barcode in zip(junk_pids, junk_barcodes)
+    }
+    adapters["hepsiburada"].products["HBCV00008XOKU2"] = offer(
+        "hepsiburada", HB_TITLE, 37685.5, "HBCV00008XOKU2", barcode="0PA14000PGXSC"
+    )
+
+    ty_wrong = offer(
+        "trendyol", "Shimano Power Aero 14000 XSC Surf Olta Makinesi", 39374.0, "1233054890",
+        url="https://www.trendyol.test/1233054890",
+    )
+    ty_right = offer(
+        "trendyol", "Shimano Power Aero 14000 XSC Olta Makinası", 33916.95, "753753295",
+        url="https://www.trendyol.test/753753295",
+    )
+    adapters["trendyol"].search_offers = [ty_wrong, ty_right]
+    adapters["trendyol"].products = {
+        "1233054890": offer("trendyol", ty_wrong.title, 39374.0, "1233054890", barcode="W4969363090645"),
+        "753753295": offer("trendyol", ty_right.title, 33916.95, "753753295", barcode="PA14000XSC"),
+    }
+
+    outcome = await pipeline.compare(N11_URL)
+    r = outcome.result
+    # Rank 5 is only reached if the enrichment cap exceeds the 4 copies.
+    assert "HBCV00008XOKU2" in adapters["hepsiburada"].product_calls
+    assert r.origin.barcode == "PA14000XSC"
+    ty_ids = {o.product_id for o in r.exact if o.site == "trendyol"}
+    assert ty_ids == {"753753295"}
+
+
 def exa_spy(monkeypatch, *, key="test-exa-key", cands=()):
     """Replace pipeline's Exa call; return recorded queries."""
     calls = []

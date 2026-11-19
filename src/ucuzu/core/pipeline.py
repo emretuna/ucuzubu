@@ -259,7 +259,7 @@ async def compare(
                 ),
                 key=lambda o: match.similarity(origin.title, o.title),
                 reverse=True,
-            )[:4]
+            )[:8]
 
             async def hb_barcode(o: Offer) -> Offer:
                 ref = hb_ad.parse_product_url(o.url)
