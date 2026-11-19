@@ -20,13 +20,15 @@ from ucuzu.core.models import FetchResult
 
 
 def install_fetch(monkeypatch, handler):
-    """Replace ucuzu.core.links.fetch.fetch; `handler(url)` -> (status, headers)."""
+    """Replace ucuzu.core.links.fetch.fetch; `handler(url)` -> (status, headers[, text])."""
     calls: list[dict] = []
 
     async def fake_fetch(url, *, mobile=False, timeout=20.0, follow_redirects=True):
         calls.append({"url": url, "mobile": mobile, "follow_redirects": follow_redirects})
-        status, headers = handler(url)
-        return FetchResult(status=status, url=url, text="", history=[], headers=headers)
+        entry = handler(url)
+        status, headers = entry[0], entry[1]
+        text = entry[2] if len(entry) > 2 else ""
+        return FetchResult(status=status, url=url, text=text, history=[], headers=headers)
 
     monkeypatch.setattr(links.fetch, "fetch", fake_fetch)
     return calls
@@ -217,3 +219,59 @@ async def test_resolve_unknown_host_landing_on_unknown_raises(monkeypatch):
 
     with pytest.raises(UnsupportedLinkError):
         await resolve("https://app.hb.biz/abc123")
+
+
+async def test_resolve_hb_deeplink_via_adjust_fallback(monkeypatch):
+    adj = (
+        "https://7t4g.adj.st/product?sku=HBCV00005JZLBB"
+        "&adj_fallback=https%3A%2F%2Fwww.hepsiburada.com%2Fshimano-p-HBCV00005JZLBB%3Fmagaza%3DAvgross"
+    )
+    hops = {"https://app.hb.biz/kieA1aTweX3Z": (301, {"location": adj})}
+    calls = install_fetch(monkeypatch, lambda url: hops[url])
+    assert await resolve("https://app.hb.biz/kieA1aTweX3Z") == (
+        "https://www.hepsiburada.com/shimano-p-HBCV00005JZLBB"
+    )
+    assert len(calls) == 1  # fallback extracted from the hop-1 URL; adj.st never fetched
+
+
+async def test_resolve_adjust_desktop_retry(monkeypatch):
+    adj = "https://7t4g.adj.st/product?sku=HBCV00005JZLBB"
+    hb = "https://www.hepsiburada.com/shimano-p-HBCV00005JZLBB?magaza=Avgross"
+    calls = []
+
+    async def fake_fetch(url, *, mobile=False, timeout=20.0, follow_redirects=True):
+        calls.append({"url": url, "mobile": mobile})
+        if url == "https://app.hb.biz/abc":
+            return FetchResult(status=301, url=url, text="", history=[], headers={"location": adj})
+        if url == adj and not mobile:
+            return FetchResult(status=302, url=url, text="", history=[], headers={"location": hb})
+        return FetchResult(status=200, url=url, text="<html>app store</html>", history=[], headers={})
+
+    monkeypatch.setattr(links.fetch, "fetch", fake_fetch)
+    assert await resolve("https://app.hb.biz/abc") == "https://www.hepsiburada.com/shimano-p-HBCV00005JZLBB"
+    assert [c["mobile"] for c in calls if c["url"] == adj] == [True, False]
+
+
+async def test_resolve_link_amazon_js_interstitial(monkeypatch):
+    target = (
+        "https://www.amazon.com.tr/dp/B0FL7ST13J/ref=cm_sw_r_as_gl_api_gl_i_X"
+        "?linkCode=ml1&tag=ucuzububot-21&linkId=abc"
+    )
+    body = (
+        '<html><head><script type="text/javascript">window.setTimeout(() => { '
+        f'window.location.replace("{target}")'
+        " }, 200);</script></head>redirecting...</html>"
+    )
+    hops = {
+        "https://link.amazon/B09HES2G4": (302, {"location": "https://amzlinks.in/B09HES2G4"}),
+        "https://amzlinks.in/B09HES2G4": (200, {}, body),
+    }
+    calls = install_fetch(monkeypatch, lambda url: hops[url])
+    assert await resolve("https://link.amazon/B09HES2G4") == "https://www.amazon.com.tr/dp/B0FL7ST13J"
+    assert len(calls) == 2  # tag/linkCode query stripped by canonicalize
+
+
+async def test_resolve_interstitial_without_target_raises(monkeypatch):
+    install_fetch(monkeypatch, lambda url: (200, {}, "<html>nothing here</html>"))
+    with pytest.raises(UnsupportedLinkError):
+        await resolve("https://amzlinks.in/abc")
