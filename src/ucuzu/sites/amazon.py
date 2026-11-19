@@ -20,12 +20,18 @@ import re
 from urllib.parse import quote_plus, urlsplit
 
 from ucuzu.core import fetch as fetch_mod
+from ucuzu.core.fetch import BlockedError
 from ucuzu.core.affiliate import affiliate_url as _affiliate_url
 from ucuzu.core.models import Offer, ProductRef
 from ucuzu.sites.base import ParseError, parse_price
 
 BASE_URL = "https://www.amazon.com.tr"
 SEARCH_URL = BASE_URL + "/s?k="
+
+# Akamai bm-verify interstitial: HTTP 200 + meta-refresh with a JS-computed
+# token; no HTTP client can pass it. Detected before parsing so logs say
+# "JS challenge" instead of a misleading missing-anchor ParseError.
+_CHALLENGE_MARKER = "bm-verify"
 
 _ASIN_RE = re.compile(r"[A-Z0-9]{10}")
 _DP_PATH_RE = re.compile(r"/dp/([A-Za-z0-9]{10})(?=[/?#]|$)")
@@ -225,6 +231,8 @@ class AmazonAdapter:
     async def fetch_product(self, ref: ProductRef) -> Offer:
         result = await fetch_mod.fetch(ref.url, mobile=True)
         html = result.text
+        if _CHALLENGE_MARKER in html:
+            raise BlockedError("amazon: product page served Akamai bm-verify JS challenge")
         title = _extract_title(html)
         if not title:
             raise ParseError("amazon: product title anchor not found")
@@ -249,6 +257,8 @@ class AmazonAdapter:
     async def search(self, query: str) -> list[Offer]:
         url = SEARCH_URL + quote_plus(query)
         result = await fetch_mod.fetch(url)
+        if _CHALLENGE_MARKER in result.text:
+            raise BlockedError("amazon: search served Akamai bm-verify JS challenge")
         offers: list[Offer] = []
         seen: set[str] = set()
         for segment in result.text.split('data-asin="')[1:]:

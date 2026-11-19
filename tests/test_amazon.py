@@ -7,7 +7,8 @@ import pathlib
 import pytest
 
 import ucuzu.core.fetch as fetch_mod
-from ucuzu.core.models import FetchResult, Offer
+from ucuzu.core.fetch import BlockedError
+from ucuzu.core.models import FetchResult, Offer, ProductRef
 from ucuzu.sites.amazon import AmazonAdapter
 from ucuzu.sites.base import ParseError
 
@@ -218,6 +219,26 @@ async def test_search_without_cards_raises(adapter, monkeypatch):
 
     with pytest.raises(ParseError):
         await adapter.search("shimano")
+
+
+_CHALLENGE_HTML = (
+    '<html><head><meta http-equiv="refresh" content="5; URL=\'/s?k=x&bm-verify=AAQAAA\'">'
+    "<script>var i = 1; var j = i + 2;</script></head><body></body></html>"
+)
+
+
+async def test_search_challenge_raises_blocked(adapter, monkeypatch):
+    _patch_fetch(monkeypatch, _CHALLENGE_HTML)
+
+    with pytest.raises(BlockedError, match="bm-verify"):
+        await adapter.search("shimano")
+
+
+async def test_fetch_product_challenge_raises_blocked(adapter, monkeypatch):
+    _patch_fetch(monkeypatch, _CHALLENGE_HTML)
+
+    with pytest.raises(BlockedError, match="bm-verify"):
+        await adapter.fetch_product(ProductRef(site="amazon", product_id=ASIN, url=PRODUCT_URL))
 
 
 def test_affiliate_url_delegates(adapter, monkeypatch):
