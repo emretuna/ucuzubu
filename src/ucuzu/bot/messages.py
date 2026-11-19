@@ -131,12 +131,12 @@ def _cheapest_line(result: ComparisonResult) -> str:
 def _similar_block(result: ComparisonResult) -> str:
     if not result.similar:
         return ""
-    lines = ["Benzer ürün (farklı satıcı/model olabilir):"]
+    lines = ["🔎 Benzer ürün (farklı satıcı/model olabilir):"]
     for offer in result.similar[:3]:
         title = escape(_truncate_title(offer.title))
         url = affiliate_url(offer.site, offer.url)
         lines.append(
-            f'• Benzer: <a href="{escape(url, quote=True)}">{title}</a> — '
+            f'• <a href="{escape(url, quote=True)}">{title}</a> — '
             f"{escape(format_price(offer.price))} ({escape(_site_name(offer.site))})"
         )
     return "\n".join(lines)

@@ -164,7 +164,7 @@ def test_similar_offers_are_labeled_and_truncated():
     long_title = "Shimano " + "cok uzun urun adi " * 8
     long_similar = dataclasses.replace(SIMILAR, title=long_title)
     text = messages.format_comparison(make_result(similar=[long_similar]))
-    assert "Benzer ürün (farklı satıcı/model olabilir)" in text
+    assert "🔎 Benzer ürün (farklı satıcı/model olabilir)" in text
     assert ">Shimano cok uzun urun adi" in text
     assert "…" in text
     assert long_title not in text
@@ -174,7 +174,8 @@ def test_similar_offers_are_labeled_and_truncated():
 def test_similar_capped_at_three():
     extras = [dataclasses.replace(SIMILAR, title=f"Model {i}", price=1000.0 + i) for i in range(5)]
     text = messages.format_comparison(make_result(similar=extras))
-    assert text.count("• Benzer:") == 3
+    assert text.count("• <a href=") == 3
+    assert "Benzer:" not in text
 
 
 def test_similar_links_use_affiliate_template(monkeypatch):
