@@ -33,6 +33,10 @@ SEARCH_URL = BASE_URL + "/s?k="
 # "JS challenge" instead of a misleading missing-anchor ParseError.
 _CHALLENGE_MARKER = "bm-verify"
 
+# Genuine zero-results page ("Arama sorgunuz için sonuç bulunamadı…"):
+# a successful search with no hits, not a site failure.
+_NO_RESULTS_MARKERS = ("sonuç bulunamadı", "did not match any products")
+
 _ASIN_RE = re.compile(r"[A-Z0-9]{10}")
 _DP_PATH_RE = re.compile(r"/dp/([A-Za-z0-9]{10})(?=[/?#]|$)")
 _GP_PATH_RE = re.compile(r"/gp/product/([A-Za-z0-9]{10})(?=[/?#]|$)")
@@ -290,6 +294,9 @@ class AmazonAdapter:
                 )
             )
         if not offers:
+            lowered = result.text.lower()
+            if any(marker in lowered for marker in _NO_RESULTS_MARKERS):
+                return []
             raise ParseError("amazon: no search result cards parsed")
         return offers
 

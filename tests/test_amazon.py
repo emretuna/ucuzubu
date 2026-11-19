@@ -241,6 +241,17 @@ async def test_fetch_product_challenge_raises_blocked(adapter, monkeypatch):
         await adapter.fetch_product(ProductRef(site="amazon", product_id=ASIN, url=PRODUCT_URL))
 
 
+async def test_search_no_results_page_returns_empty(adapter, monkeypatch):
+    html = (
+        '<html><body><div class="s-result-item" data-asin="" data-index="0"></div>'
+        "<span>Arama sorgunuz için sonuç bulunamadı. Yazım hatalarını kontrol edin</span>"
+        "</body></html>"
+    )
+    _patch_fetch(monkeypatch, html)
+
+    assert await adapter.search("kudos sky ii pod") == []
+
+
 def test_affiliate_url_delegates(adapter, monkeypatch):
     seen = {}
 
